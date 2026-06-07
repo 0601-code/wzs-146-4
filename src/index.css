@@ -1,0 +1,145 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f1a26 0%, #1a2a3a 50%, #0f1a26 100%);
+  color: #e4e9f0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(26, 42, 58, 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4a698e;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b86a8;
+}
+
+/* 选中文字 */
+::selection {
+  background: rgba(212, 165, 116, 0.3);
+  color: #d4a574;
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-copper-500 text-rail-900 font-medium rounded-md
+           hover:bg-copper-400 active:bg-copper-600
+           transition-all duration-200
+           hover:shadow-lg hover:-translate-y-0.5;
+    box-shadow: 0 4px 20px -2px rgba(212, 165, 116, 0.2);
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 4px 20px -2px rgba(212, 165, 116, 0.4);
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-rail-700 text-rail-100 font-medium rounded-md
+           border border-rail-600
+           hover:bg-rail-600 hover:border-rail-500
+           transition-all duration-200
+           hover:-translate-y-0.5;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-signal-red/20 text-signal-red font-medium rounded-md
+           border border-signal-red/40
+           hover:bg-signal-red/30 hover:border-signal-red/60
+           transition-all duration-200;
+  }
+
+  .card {
+    @apply bg-rail-800/60 backdrop-blur-sm border border-rail-700/50
+           rounded-lg;
+    box-shadow: 0 4px 20px -2px rgba(26, 42, 58, 0.3);
+  }
+
+  .card-hover {
+    @apply card transition-all duration-300 hover:border-copper-500/30
+           hover:-translate-y-1;
+  }
+
+  .card-hover:hover {
+    box-shadow: 0 8px 30px -4px rgba(212, 165, 116, 0.15);
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 bg-rail-900/80 border border-rail-600 rounded-md
+           text-rail-100 placeholder-rail-500
+           focus:outline-none focus:border-copper-500 focus:ring-1 focus:ring-copper-500/50
+           transition-all duration-200;
+  }
+
+  .label-text {
+    @apply text-sm font-medium text-rail-300 mb-1.5 block;
+  }
+
+  .section-title {
+    @apply font-display text-xl font-semibold text-copper-400 tracking-wide;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-md text-rail-300
+           hover:bg-rail-700/50 hover:text-copper-400
+           transition-all duration-200 cursor-pointer;
+  }
+
+  .nav-item-active {
+    @apply bg-rail-700/70 text-copper-400 border-l-2 border-copper-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full;
+  }
+
+  .badge-locomotive {
+    @apply bg-copper-500/20 text-copper-400 border border-copper-500/30;
+  }
+
+  .badge-car {
+    @apply bg-rail-600/50 text-rail-300 border border-rail-500/30;
+  }
+
+  .badge-success {
+    @apply bg-signal-green/20 text-signal-green border border-signal-green/30;
+  }
+
+  .badge-warning {
+    @apply bg-signal-yellow/20 text-signal-yellow border border-signal-yellow/30;
+  }
+
+  .badge-danger {
+    @apply bg-signal-red/20 text-signal-red border border-signal-red/30;
+  }
+}
