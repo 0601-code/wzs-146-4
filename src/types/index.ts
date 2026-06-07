@@ -27,6 +27,7 @@ export interface RunLog {
   consistId?: string;
   date: string;
   route: string;
+  sectionIds?: string[];
   durationMinutes: number;
   powerLevel: string;
   issues?: string;
@@ -36,6 +37,33 @@ export interface RunLog {
 }
 
 export type TrackElementType = 'straight' | 'curve' | 'switch';
+
+export interface TrackEndpoint {
+  id: string;
+  elementId: string;
+  endpointIndex: number;
+  x: number;
+  y: number;
+  angle: number;
+}
+
+export interface TrackConnection {
+  id: string;
+  trackMapId: string;
+  endpointAId: string;
+  endpointBId: string;
+  elementAId: string;
+  elementBId: string;
+}
+
+export interface TrackSection {
+  id: string;
+  trackMapId: string;
+  name: string;
+  description?: string;
+  elementIds: string[];
+  color?: string;
+}
 
 export interface TrackElement {
   id: string;
@@ -77,6 +105,8 @@ export interface ExportData {
   runLogs: RunLog[];
   trackMaps: TrackMap[];
   trackElements: TrackElement[];
+  trackConnections: TrackConnection[];
+  trackSections: TrackSection[];
   issueMarkers: IssueMarker[];
 }
 
@@ -90,5 +120,7 @@ export const STORAGE_KEYS = {
   RUN_LOGS: 'railway_runlogs',
   TRACK_MAPS: 'railway_trackmaps',
   TRACK_ELEMENTS: 'railway_trackelements',
+  TRACK_CONNECTIONS: 'railway_trackconnections',
+  TRACK_SECTIONS: 'railway_tracksections',
   ISSUE_MARKERS: 'railway_issuemarkers',
 } as const;

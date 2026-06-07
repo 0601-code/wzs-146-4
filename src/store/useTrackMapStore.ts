@@ -1,10 +1,13 @@
 import { create } from 'zustand';
-import { TrackMap, TrackElement, IssueMarker, STORAGE_KEYS, IssueType } from '@/types';
+import { TrackMap, TrackElement, TrackConnection, TrackSection, IssueMarker, STORAGE_KEYS, IssueType } from '@/types';
 import { generateId, loadFromStorage, saveToStorage } from '@/utils';
+import { findConnections } from '@/utils/topology';
 
 interface TrackMapState {
   trackMaps: TrackMap[];
   trackElements: TrackElement[];
+  trackConnections: TrackConnection[];
+  trackSections: TrackSection[];
   issueMarkers: IssueMarker[];
   activeTrackMapId: string | null;
 
@@ -19,6 +22,16 @@ interface TrackMapState {
   deleteTrackElement: (id: string) => void;
   getTrackElementsByMap: (trackMapId: string) => TrackElement[];
 
+  addTrackConnection: (data: Omit<TrackConnection, 'id'>) => void;
+  deleteTrackConnection: (id: string) => void;
+  getConnectionsByMap: (trackMapId: string) => TrackConnection[];
+  recalculateConnections: (trackMapId: string) => void;
+
+  addTrackSection: (data: Omit<TrackSection, 'id'>) => string;
+  updateTrackSection: (id: string, data: Partial<TrackSection>) => void;
+  deleteTrackSection: (id: string) => void;
+  getSectionsByMap: (trackMapId: string) => TrackSection[];
+
   addIssueMarker: (data: Omit<IssueMarker, 'id' | 'createdAt'>) => void;
   updateIssueMarker: (id: string, data: Partial<IssueMarker>) => void;
   deleteIssueMarker: (id: string) => void;
@@ -28,6 +41,8 @@ interface TrackMapState {
 export const useTrackMapStore = create<TrackMapState>((set, get) => ({
   trackMaps: loadFromStorage<TrackMap[]>(STORAGE_KEYS.TRACK_MAPS, []),
   trackElements: loadFromStorage<TrackElement[]>(STORAGE_KEYS.TRACK_ELEMENTS, []),
+  trackConnections: loadFromStorage<TrackConnection[]>(STORAGE_KEYS.TRACK_CONNECTIONS, []),
+  trackSections: loadFromStorage<TrackSection[]>(STORAGE_KEYS.TRACK_SECTIONS, []),
   issueMarkers: loadFromStorage<IssueMarker[]>(STORAGE_KEYS.ISSUE_MARKERS, []),
   activeTrackMapId: null,
 
@@ -62,13 +77,19 @@ export const useTrackMapStore = create<TrackMapState>((set, get) => ({
     set((state) => {
       const trackMaps = state.trackMaps.filter((m) => m.id !== id);
       const trackElements = state.trackElements.filter((e) => e.trackMapId !== id);
+      const trackConnections = state.trackConnections.filter((c) => c.trackMapId !== id);
+      const trackSections = state.trackSections.filter((s) => s.trackMapId !== id);
       const issueMarkers = state.issueMarkers.filter((m) => m.trackMapId !== id);
       saveToStorage(STORAGE_KEYS.TRACK_MAPS, trackMaps);
       saveToStorage(STORAGE_KEYS.TRACK_ELEMENTS, trackElements);
+      saveToStorage(STORAGE_KEYS.TRACK_CONNECTIONS, trackConnections);
+      saveToStorage(STORAGE_KEYS.TRACK_SECTIONS, trackSections);
       saveToStorage(STORAGE_KEYS.ISSUE_MARKERS, issueMarkers);
       return {
         trackMaps,
         trackElements,
+        trackConnections,
+        trackSections,
         issueMarkers,
         activeTrackMapId: state.activeTrackMapId === id ? null : state.activeTrackMapId,
       };
@@ -116,6 +137,76 @@ export const useTrackMapStore = create<TrackMapState>((set, get) => ({
 
   getTrackElementsByMap: (trackMapId) => {
     return get().trackElements.filter((e) => e.trackMapId === trackMapId);
+  },
+
+  addTrackConnection: (data) => {
+    const newConn: TrackConnection = {
+      ...data,
+      id: generateId(),
+    };
+    set((state) => {
+      const trackConnections = [...state.trackConnections, newConn];
+      saveToStorage(STORAGE_KEYS.TRACK_CONNECTIONS, trackConnections);
+      return { trackConnections };
+    });
+  },
+
+  deleteTrackConnection: (id) => {
+    set((state) => {
+      const trackConnections = state.trackConnections.filter((c) => c.id !== id);
+      saveToStorage(STORAGE_KEYS.TRACK_CONNECTIONS, trackConnections);
+      return { trackConnections };
+    });
+  },
+
+  getConnectionsByMap: (trackMapId) => {
+    return get().trackConnections.filter((c) => c.trackMapId === trackMapId);
+  },
+
+  recalculateConnections: (trackMapId) => {
+    const elements = get().trackElements.filter((e) => e.trackMapId === trackMapId);
+    const newConnections = findConnections(elements);
+    set((state) => {
+      const otherConnections = state.trackConnections.filter((c) => c.trackMapId !== trackMapId);
+      const trackConnections = [...otherConnections, ...newConnections];
+      saveToStorage(STORAGE_KEYS.TRACK_CONNECTIONS, trackConnections);
+      return { trackConnections };
+    });
+  },
+
+  addTrackSection: (data) => {
+    const newSection: TrackSection = {
+      ...data,
+      id: generateId(),
+    };
+    set((state) => {
+      const trackSections = [...state.trackSections, newSection];
+      saveToStorage(STORAGE_KEYS.TRACK_SECTIONS, trackSections);
+      return { trackSections };
+    });
+    return newSection.id;
+  },
+
+  updateTrackSection: (id, data) => {
+    set((state) => {
+      const trackSections = state.trackSections.map((s) =>
+        s.id === id ? { ...s, ...data } : s
+      );
+      saveToStorage(STORAGE_KEYS.TRACK_SECTIONS, trackSections);
+      return { trackSections };
+    });
+  },
+
+  deleteTrackSection: (id) => {
+    set((state) => {
+      const trackSections = state.trackSections.filter((s) => s.id !== id);
+      saveToStorage(STORAGE_KEYS.TRACK_SECTIONS, trackSections);
+      return { trackSections };
+    });
+  },
+
+  getSectionsByMap: (trackMapId) => {
+    return get().trackSections.filter((s) => s.trackMapId === trackMapId);
   },
 
   addIssueMarker: (data) => {

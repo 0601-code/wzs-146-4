@@ -1,17 +1,20 @@
-import { useRef, useEffect, useState, forwardRef, useImperativeHandle, useCallback } from 'react';
+import { useRef, useEffect, useState, forwardRef, useImperativeHandle, useCallback, useMemo } from 'react';
 import { Stage, Layer, Rect, Line, Circle, Text, Group, Arc } from 'react-konva';
 import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
-import { TrackElement, IssueMarker, TrackElementType } from '@/types';
+import { TrackElement, IssueMarker, TrackElementType, TrackEndpoint, TrackConnection } from '@/types';
 import { getIssueTypeColor, getIssueTypeLabel } from '@/store/useTrackMapStore';
+import { getElementEndpoints, getAllEndpoints, findNearestEndpoint, snapEndpointToTarget, distance } from '@/utils/topology';
 
 type Tool = 'select' | 'straight' | 'curve' | 'switch' | 'issue';
 
 interface TrackCanvasProps {
   trackElements: TrackElement[];
+  trackConnections: TrackConnection[];
   issueMarkers: IssueMarker[];
   activeTool: Tool;
   selectedElementId: string | null;
+  showEndpoints: boolean;
   onAddTrackElement: (element: Omit<TrackElement, 'id'>) => void;
   onUpdateTrackElement: (id: string, data: Partial<TrackElement>) => void;
   onDeleteElement: (id: string) => void;
@@ -20,6 +23,8 @@ interface TrackCanvasProps {
   onSelectIssueMarker: (marker: IssueMarker) => void;
   onSelectElement: (id: string | null) => void;
   onScaleChange?: (scale: number) => void;
+  onRecalculateConnections?: () => void;
+  onFocusEndpoint?: (endpoint: TrackEndpoint) => void;
 }
 
 export interface TrackCanvasRef {
@@ -37,127 +42,168 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
 const SCALE_STEP = 1.1;
 
+interface TrackSegmentProps {
+  element: TrackElement;
+  isSelected: boolean;
+  showEndpoints: boolean;
+  allEndpoints: TrackEndpoint[];
+  onSelect: () => void;
+  onDragEnd: (id: string, x: number, y: number, rotation: number) => void;
+  onDragMove?: (id: string, x: number, y: number) => void;
+  onEndpointClick?: (endpoint: TrackEndpoint) => void;
+}
+
 function TrackSegment({
   element,
   isSelected,
+  showEndpoints,
+  allEndpoints,
   onSelect,
   onDragEnd,
-}: {
-  element: TrackElement;
-  isSelected: boolean;
-  onSelect: () => void;
-  onDragEnd: (x: number, y: number) => void;
-}) {
+  onDragMove,
+  onEndpointClick,
+}: TrackSegmentProps) {
   const { type, x, y, rotation, length, radius } = element;
+  const endpoints = useMemo(() => getElementEndpoints(element), [element]);
 
-  if (type === 'straight') {
-    return (
-      <Group x={x} y={y} rotation={rotation} draggable onDragEnd={(e) => onDragEnd(e.target.x(), e.target.y())} onClick={onSelect}>
-        <Line
-          points={[0, 0, length, 0]}
-          stroke={isSelected ? '#d4a574' : TRACK_COLOR}
-          strokeWidth={TRACK_WIDTH}
-          lineCap="round"
-        />
-        <Line
-          points={[0, -3, length, -3]}
-          stroke={isSelected ? '#e6caa5' : TRACK_RAIL_COLOR}
-          strokeWidth={1}
-        />
-        <Line
-          points={[0, 3, length, 3]}
-          stroke={isSelected ? '#e6caa5' : TRACK_RAIL_COLOR}
-          strokeWidth={1}
-        />
-        {isSelected && (
-          <Rect
-            x={-4}
-            y={-8}
-            width={length + 8}
-            height={16}
-            stroke="#d4a574"
-            strokeWidth={1}
-            dash={[4, 4]}
-            opacity={0.5}
+  const handleDragMove = useCallback(
+    (e: KonvaEventObject<DragEvent>) => {
+      const target = e.target;
+      const group = target.getParent();
+      if (!group) return;
+      onDragMove?.(element.id, group.x(), group.y());
+    },
+    [element.id, onDragMove]
+  );
+
+  const handleDragEnd = useCallback(
+    (e: KonvaEventObject<DragEvent>) => {
+      const target = e.target;
+      const group = target.getParent();
+      if (!group) return;
+
+      const finalX = group.x();
+      const finalY = group.y();
+
+      const tempElement = { ...element, x: finalX, y: finalY };
+      const tempEndpoints = getElementEndpoints(tempElement);
+
+      let bestSnap: { target: TrackEndpoint; endpointIndex: number; dist: number } | null = null;
+
+      for (let i = 0; i < tempEndpoints.length; i++) {
+        const ep = tempEndpoints[i];
+        const nearest = findNearestEndpoint(ep.x, ep.y, allEndpoints, element.id);
+        if (nearest && (!bestSnap || nearest.distance < bestSnap.dist)) {
+          bestSnap = { target: nearest.endpoint, endpointIndex: i, dist: nearest.distance };
+        }
+      }
+
+      if (bestSnap) {
+        const snapped = snapEndpointToTarget(
+          tempElement,
+          bestSnap.endpointIndex,
+          bestSnap.target.x,
+          bestSnap.target.y,
+          bestSnap.target.angle
+        );
+        onDragEnd(element.id, snapped.x, snapped.y, snapped.rotation);
+      } else {
+        onDragEnd(element.id, finalX, finalY, element.rotation);
+      }
+    },
+    [element, allEndpoints, onDragEnd]
+  );
+
+  const renderTrackBody = () => {
+    if (type === 'straight') {
+      return (
+        <>
+          <Line
+            points={[0, 0, length, 0]}
+            stroke={isSelected ? '#d4a574' : TRACK_COLOR}
+            strokeWidth={TRACK_WIDTH}
+            lineCap="round"
           />
-        )}
-      </Group>
-    );
-  }
+          <Line points={[0, -3, length, -3]} stroke={isSelected ? '#e6caa5' : TRACK_RAIL_COLOR} strokeWidth={1} />
+          <Line points={[0, 3, length, 3]} stroke={isSelected ? '#e6caa5' : TRACK_RAIL_COLOR} strokeWidth={1} />
+          {isSelected && (
+            <Rect x={-4} y={-8} width={length + 8} height={16} stroke="#d4a574" strokeWidth={1} dash={[4, 4]} opacity={0.5} />
+          )}
+        </>
+      );
+    }
 
-  if (type === 'curve') {
-    const r = radius || 60;
-    const trackHalf = TRACK_WIDTH / 2;
-    return (
-      <Group x={x} y={y} rotation={rotation} draggable onDragEnd={(e) => onDragEnd(e.target.x(), e.target.y())} onClick={onSelect}>
-        <Arc
-          x={0}
-          y={-r}
-          innerRadius={r - trackHalf}
-          outerRadius={r + trackHalf}
-          angle={90}
-          fill={isSelected ? '#d4a574' : TRACK_COLOR}
-          rotation={90}
-        />
-        <Arc
-          x={0}
-          y={-r}
-          innerRadius={r - 3}
-          outerRadius={r - 3}
-          angle={90}
-          stroke={isSelected ? '#e6caa5' : TRACK_RAIL_COLOR}
-          strokeWidth={1}
-          rotation={90}
-        />
-        <Arc
-          x={0}
-          y={-r}
-          innerRadius={r + 3}
-          outerRadius={r + 3}
-          angle={90}
-          stroke={isSelected ? '#e6caa5' : TRACK_RAIL_COLOR}
-          strokeWidth={1}
-          rotation={90}
-        />
-        {isSelected && (
-          <Arc
-            x={0}
-            y={-r}
-            innerRadius={r - trackHalf - 4}
-            outerRadius={r + trackHalf + 4}
-            angle={90}
-            stroke="#d4a574"
-            strokeWidth={1}
-            dash={[4, 4]}
-            opacity={0.5}
-            rotation={90}
+    if (type === 'curve') {
+      const r = radius || 60;
+      const trackHalf = TRACK_WIDTH / 2;
+      return (
+        <>
+          <Arc x={0} y={-r} innerRadius={r - trackHalf} outerRadius={r + trackHalf} angle={90} fill={isSelected ? '#d4a574' : TRACK_COLOR} rotation={90} />
+          <Arc x={0} y={-r} innerRadius={r - 3} outerRadius={r - 3} angle={90} stroke={isSelected ? '#e6caa5' : TRACK_RAIL_COLOR} strokeWidth={1} rotation={90} />
+          <Arc x={0} y={-r} innerRadius={r + 3} outerRadius={r + 3} angle={90} stroke={isSelected ? '#e6caa5' : TRACK_RAIL_COLOR} strokeWidth={1} rotation={90} />
+          {isSelected && (
+            <Arc x={0} y={-r} innerRadius={r - trackHalf - 4} outerRadius={r + trackHalf + 4} angle={90} stroke="#d4a574" strokeWidth={1} dash={[4, 4]} opacity={0.5} rotation={90} />
+          )}
+        </>
+      );
+    }
+
+    if (type === 'switch') {
+      return (
+        <>
+          <Line points={[0, 0, length, 0]} stroke={isSelected ? '#d4a574' : TRACK_COLOR} strokeWidth={TRACK_WIDTH} lineCap="round" />
+          <Line points={[length * 0.4, 0, length, -15]} stroke={isSelected ? '#d4a574' : TRACK_COLOR} strokeWidth={TRACK_WIDTH - 1} lineCap="round" />
+          <Circle x={length * 0.4} y={0} radius={5} fill={isSelected ? '#d4a574' : '#f39c12'} />
+        </>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <Group
+      x={x}
+      y={y}
+      rotation={rotation}
+      draggable
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
+      onClick={(e) => {
+        e.cancelBubble = true;
+        onSelect();
+      }}
+    >
+      {renderTrackBody()}
+
+      {showEndpoints && endpoints.map((ep, idx) => {
+        const localX = ep.x - x;
+        const localY = ep.y - y;
+        const rotRad = (rotation * Math.PI) / 180;
+        const cos = Math.cos(-rotRad);
+        const sin = Math.sin(-rotRad);
+        const relX = localX * cos - localY * sin;
+        const relY = localX * sin + localY * cos;
+
+        return (
+          <Circle
+            key={`ep-${idx}`}
+            x={relX}
+            y={relY}
+            radius={4}
+            fill="#4ade80"
+            stroke="#fff"
+            strokeWidth={1.5}
+            onClick={(e) => {
+              e.cancelBubble = true;
+              onEndpointClick?.(ep);
+            }}
+            style={{ cursor: 'pointer' }}
           />
-        )}
-      </Group>
-    );
-  }
-
-  if (type === 'switch') {
-    return (
-      <Group x={x} y={y} rotation={rotation} draggable onDragEnd={(e) => onDragEnd(e.target.x(), e.target.y())} onClick={onSelect}>
-        <Line
-          points={[0, 0, length, 0]}
-          stroke={isSelected ? '#d4a574' : TRACK_COLOR}
-          strokeWidth={TRACK_WIDTH}
-          lineCap="round"
-        />
-        <Line
-          points={[length * 0.4, 0, length, -15]}
-          stroke={isSelected ? '#d4a574' : TRACK_COLOR}
-          strokeWidth={TRACK_WIDTH - 1}
-          lineCap="round"
-        />
-        <Circle x={length * 0.4} y={0} radius={5} fill={isSelected ? '#d4a574' : '#f39c12'} />
-      </Group>
-    );
-  }
-
-  return null;
+        );
+      })}
+    </Group>
+  );
 }
 
 function IssueMarkerNode({
@@ -228,9 +274,11 @@ function IssueMarkerNode({
 const TrackCanvas = forwardRef<TrackCanvasRef, TrackCanvasProps>(function TrackCanvas(
   {
     trackElements,
+    trackConnections,
     issueMarkers,
     activeTool,
     selectedElementId,
+    showEndpoints,
     onAddTrackElement,
     onUpdateTrackElement,
     onDeleteElement,
@@ -239,6 +287,8 @@ const TrackCanvas = forwardRef<TrackCanvasRef, TrackCanvasProps>(function TrackC
     onSelectIssueMarker,
     onSelectElement,
     onScaleChange,
+    onRecalculateConnections,
+    onFocusEndpoint,
   },
   ref
 ) {
@@ -251,6 +301,23 @@ const TrackCanvas = forwardRef<TrackCanvasRef, TrackCanvasProps>(function TrackC
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
   const [previewPos, setPreviewPos] = useState<{ x: number; y: number } | null>(null);
+  const [snapTarget, setSnapTarget] = useState<TrackEndpoint | null>(null);
+  const [draggingElementId, setDraggingElementId] = useState<string | null>(null);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const [isExtending, setIsExtending] = useState(false);
+  const [extendingFrom, setExtendingFrom] = useState<TrackEndpoint | null>(null);
+  const [extendingPreview, setExtendingPreview] = useState<TrackElement | null>(null);
+
+  const allEndpoints = useMemo(() => getAllEndpoints(trackElements), [trackElements]);
+
+  const unconnectedEndpoints = useMemo(() => {
+    const connectedIds = new Set<string>();
+    trackConnections.forEach((c) => {
+      connectedIds.add(c.endpointAId);
+      connectedIds.add(c.endpointBId);
+    });
+    return allEndpoints.filter((ep) => !connectedIds.has(ep.id));
+  }, [allEndpoints, trackConnections]);
 
   const screenToLogic = useCallback(
     (screenX: number, screenY: number) => {
@@ -381,11 +448,38 @@ const TrackCanvas = forwardRef<TrackCanvasRef, TrackCanvasProps>(function TrackC
     [activeTool, isPanning, getLogicPointerPosition, onAddTrackElement, onAddIssueMarker, onSelectElement]
   );
 
-  const handleTrackDragEnd = useCallback(
+  const handleTrackDragMove = useCallback(
     (id: string, x: number, y: number) => {
-      onUpdateTrackElement(id, { x, y });
+      setDraggingElementId(id);
+      setDragPos({ x, y });
+
+      const element = trackElements.find((e) => e.id === id);
+      if (!element) return;
+
+      const tempElement = { ...element, x, y };
+      const tempEndpoints = getElementEndpoints(tempElement);
+
+      let nearest: { endpoint: TrackEndpoint; distance: number } | null = null;
+      for (const ep of tempEndpoints) {
+        const found = findNearestEndpoint(ep.x, ep.y, allEndpoints, id);
+        if (found && (!nearest || found.distance < nearest.distance)) {
+          nearest = found;
+        }
+      }
+      setSnapTarget(nearest?.endpoint || null);
     },
-    [onUpdateTrackElement]
+    [trackElements, allEndpoints]
+  );
+
+  const handleTrackDragEnd = useCallback(
+    (id: string, x: number, y: number, rotation: number) => {
+      onUpdateTrackElement(id, { x, y, rotation });
+      setDraggingElementId(null);
+      setDragPos(null);
+      setSnapTarget(null);
+      setTimeout(() => onRecalculateConnections?.(), 0);
+    },
+    [onUpdateTrackElement, onRecalculateConnections]
   );
 
   const handleMarkerDragEnd = useCallback(
@@ -393,6 +487,57 @@ const TrackCanvas = forwardRef<TrackCanvasRef, TrackCanvasProps>(function TrackC
       onUpdateIssueMarker(id, { x, y });
     },
     [onUpdateIssueMarker]
+  );
+
+  const handleEndpointMouseDown = useCallback(
+    (endpoint: TrackEndpoint, e: KonvaEventObject<MouseEvent>) => {
+      e.cancelBubble = true;
+
+      if (activeTool === 'select') {
+        onFocusEndpoint?.(endpoint);
+        return;
+      }
+
+      if (['straight', 'curve', 'switch'].includes(activeTool)) {
+        e.evt.preventDefault();
+        setIsExtending(true);
+        setExtendingFrom(endpoint);
+
+        const newElement: TrackElement = {
+          id: 'preview',
+          trackMapId: '',
+          type: activeTool as TrackElementType,
+          x: endpoint.x,
+          y: endpoint.y,
+          rotation: endpoint.angle + 180,
+          length: activeTool === 'curve' ? 0 : 100,
+          radius: activeTool === 'curve' ? 60 : undefined,
+        };
+        setExtendingPreview(newElement);
+      }
+    },
+    [activeTool, onFocusEndpoint]
+  );
+
+  const handleEndpointClick = useCallback(
+    (endpoint: TrackEndpoint) => {
+      if (['straight', 'curve', 'switch'].includes(activeTool)) {
+        const newElement: Omit<TrackElement, 'id'> = {
+          trackMapId: '',
+          type: activeTool as TrackElementType,
+          x: endpoint.x,
+          y: endpoint.y,
+          rotation: endpoint.angle + 180,
+          length: activeTool === 'curve' ? 0 : 100,
+          radius: activeTool === 'curve' ? 60 : undefined,
+        };
+        onAddTrackElement(newElement);
+        setTimeout(() => onRecalculateConnections?.(), 0);
+      } else {
+        onFocusEndpoint?.(endpoint);
+      }
+    },
+    [activeTool, onAddTrackElement, onRecalculateConnections, onFocusEndpoint]
   );
 
   const resetZoom = useCallback(() => {
@@ -613,10 +758,70 @@ const TrackCanvas = forwardRef<TrackCanvasRef, TrackCanvasProps>(function TrackC
                 key={element.id}
                 element={element}
                 isSelected={selectedElementId === element.id}
+                showEndpoints={showEndpoints}
+                allEndpoints={allEndpoints}
                 onSelect={() => onSelectElement(element.id)}
-                onDragEnd={(x, y) => handleTrackDragEnd(element.id, x, y)}
+                onDragMove={handleTrackDragMove}
+                onDragEnd={handleTrackDragEnd}
+                onEndpointClick={handleEndpointClick}
               />
             ))}
+
+            {showEndpoints && unconnectedEndpoints.map((ep) => (
+              <Circle
+                key={`break-${ep.id}`}
+                x={ep.x}
+                y={ep.y}
+                radius={6}
+                fill="#ef4444"
+                stroke="#fff"
+                strokeWidth={2}
+                listening={false}
+              />
+            ))}
+
+            {snapTarget && (
+              <Circle
+                x={snapTarget.x}
+                y={snapTarget.y}
+                radius={10}
+                fill="none"
+                stroke="#4ade80"
+                strokeWidth={2}
+                dash={[4, 4]}
+                listening={false}
+              />
+            )}
+
+            {snapTarget && dragPos && (
+              <Line
+                points={[dragPos.x, dragPos.y, snapTarget.x, snapTarget.y]}
+                stroke="#4ade80"
+                strokeWidth={1}
+                dash={[4, 4]}
+                opacity={0.8}
+                listening={false}
+              />
+            )}
+
+            {trackConnections.map((conn) => {
+              const epA = allEndpoints.find((e) => e.id === conn.endpointAId);
+              const epB = allEndpoints.find((e) => e.id === conn.endpointBId);
+              if (!epA || !epB) return null;
+              const midX = (epA.x + epB.x) / 2;
+              const midY = (epA.y + epB.y) / 2;
+              return (
+                <Circle
+                  key={`conn-${conn.id}`}
+                  x={midX}
+                  y={midY}
+                  radius={3}
+                  fill="#4ade80"
+                  opacity={0.6}
+                  listening={false}
+                />
+              );
+            })}
 
             {issueMarkers.map((marker) => (
               <IssueMarkerNode

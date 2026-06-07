@@ -19,6 +19,8 @@ export function exportAllData(): ExportData {
     runLogs: loadFromStorage(STORAGE_KEYS.RUN_LOGS, []),
     trackMaps: loadFromStorage(STORAGE_KEYS.TRACK_MAPS, []),
     trackElements: loadFromStorage(STORAGE_KEYS.TRACK_ELEMENTS, []),
+    trackConnections: loadFromStorage(STORAGE_KEYS.TRACK_CONNECTIONS, []),
+    trackSections: loadFromStorage(STORAGE_KEYS.TRACK_SECTIONS, []),
     issueMarkers: loadFromStorage(STORAGE_KEYS.ISSUE_MARKERS, []),
   };
 }
@@ -47,6 +49,8 @@ export function applyImportData(data: ExportData, merge: boolean = false): void 
     removeFromStorage(STORAGE_KEYS.RUN_LOGS);
     removeFromStorage(STORAGE_KEYS.TRACK_MAPS);
     removeFromStorage(STORAGE_KEYS.TRACK_ELEMENTS);
+    removeFromStorage(STORAGE_KEYS.TRACK_CONNECTIONS);
+    removeFromStorage(STORAGE_KEYS.TRACK_SECTIONS);
     removeFromStorage(STORAGE_KEYS.ISSUE_MARKERS);
   }
 
@@ -70,6 +74,14 @@ export function applyImportData(data: ExportData, merge: boolean = false): void 
     const existing = merge ? loadFromStorage(STORAGE_KEYS.TRACK_ELEMENTS, []) : [];
     saveToStorage(STORAGE_KEYS.TRACK_ELEMENTS, [...existing, ...data.trackElements]);
   }
+  if (data.trackConnections?.length) {
+    const existing = merge ? loadFromStorage(STORAGE_KEYS.TRACK_CONNECTIONS, []) : [];
+    saveToStorage(STORAGE_KEYS.TRACK_CONNECTIONS, [...existing, ...data.trackConnections]);
+  }
+  if (data.trackSections?.length) {
+    const existing = merge ? loadFromStorage(STORAGE_KEYS.TRACK_SECTIONS, []) : [];
+    saveToStorage(STORAGE_KEYS.TRACK_SECTIONS, [...existing, ...data.trackSections]);
+  }
   if (data.issueMarkers?.length) {
     const existing = merge ? loadFromStorage(STORAGE_KEYS.ISSUE_MARKERS, []) : [];
     saveToStorage(STORAGE_KEYS.ISSUE_MARKERS, [...existing, ...data.issueMarkers]);
@@ -82,6 +94,8 @@ export function clearAllData(): void {
   removeFromStorage(STORAGE_KEYS.RUN_LOGS);
   removeFromStorage(STORAGE_KEYS.TRACK_MAPS);
   removeFromStorage(STORAGE_KEYS.TRACK_ELEMENTS);
+  removeFromStorage(STORAGE_KEYS.TRACK_CONNECTIONS);
+  removeFromStorage(STORAGE_KEYS.TRACK_SECTIONS);
   removeFromStorage(STORAGE_KEYS.ISSUE_MARKERS);
 }
 
@@ -91,6 +105,8 @@ export function getDataStats(): {
   runLogs: number;
   trackMaps: number;
   trackElements: number;
+  trackConnections: number;
+  trackSections: number;
   issueMarkers: number;
 } {
   return {
@@ -99,6 +115,8 @@ export function getDataStats(): {
     runLogs: loadFromStorage(STORAGE_KEYS.RUN_LOGS, []).length,
     trackMaps: loadFromStorage(STORAGE_KEYS.TRACK_MAPS, []).length,
     trackElements: loadFromStorage(STORAGE_KEYS.TRACK_ELEMENTS, []).length,
+    trackConnections: loadFromStorage(STORAGE_KEYS.TRACK_CONNECTIONS, []).length,
+    trackSections: loadFromStorage(STORAGE_KEYS.TRACK_SECTIONS, []).length,
     issueMarkers: loadFromStorage(STORAGE_KEYS.ISSUE_MARKERS, []).length,
   };
 }

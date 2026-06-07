@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { RunLog, POWER_LEVEL_OPTIONS } from '@/types';
 import { useRunLogStore } from '@/store/useRunLogStore';
 import { useConsistStore } from '@/store/useConsistStore';
+import { useTrackMapStore } from '@/store/useTrackMapStore';
 import Modal from '@/components/ui/Modal';
 import dayjs from 'dayjs';
 
@@ -14,11 +15,13 @@ interface RunLogFormModalProps {
 export default function RunLogFormModal({ isOpen, onClose, editLog }: RunLogFormModalProps) {
   const { addRunLog, updateRunLog } = useRunLogStore();
   const { consists } = useConsistStore();
+  const { trackMaps, trackSections } = useTrackMapStore();
 
   const [formData, setFormData] = useState({
     consistId: '',
     date: dayjs().format('YYYY-MM-DD'),
     route: '',
+    sectionIds: [] as string[],
     durationMinutes: 30,
     powerLevel: '中速',
     issues: '',
@@ -26,12 +29,20 @@ export default function RunLogFormModal({ isOpen, onClose, editLog }: RunLogForm
     notes: '',
   });
 
+  const allSections = useMemo(() => {
+    return trackSections.map((s) => {
+      const map = trackMaps.find((m) => m.id === s.trackMapId);
+      return { ...s, mapName: map?.name || '未知轨道图' };
+    });
+  }, [trackSections, trackMaps]);
+
   useEffect(() => {
     if (editLog) {
       setFormData({
         consistId: editLog.consistId || '',
         date: dayjs(editLog.date).format('YYYY-MM-DD'),
         route: editLog.route,
+        sectionIds: editLog.sectionIds || [],
         durationMinutes: editLog.durationMinutes,
         powerLevel: editLog.powerLevel,
         issues: editLog.issues || '',
@@ -43,6 +54,7 @@ export default function RunLogFormModal({ isOpen, onClose, editLog }: RunLogForm
         consistId: consists[0]?.id || '',
         date: dayjs().format('YYYY-MM-DD'),
         route: '',
+        sectionIds: [],
         durationMinutes: 30,
         powerLevel: '中速',
         issues: '',
@@ -52,14 +64,29 @@ export default function RunLogFormModal({ isOpen, onClose, editLog }: RunLogForm
     }
   }, [editLog, isOpen, consists]);
 
+  const handleToggleSection = (sectionId: string) => {
+    setFormData((prev) => {
+      if (prev.sectionIds.includes(sectionId)) {
+        return { ...prev, sectionIds: prev.sectionIds.filter((id) => id !== sectionId) };
+      } else {
+        return { ...prev, sectionIds: [...prev.sectionIds, sectionId] };
+      }
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.route.trim()) return;
+
+    const selectedSectionNames = allSections
+      .filter((s) => formData.sectionIds.includes(s.id))
+      .map((s) => s.name);
 
     const logData = {
       consistId: formData.consistId || undefined,
       date: formData.date,
       route: formData.route.trim(),
+      sectionIds: formData.sectionIds.length > 0 ? formData.sectionIds : undefined,
       durationMinutes: formData.durationMinutes,
       powerLevel: formData.powerLevel,
       issues: formData.issues.trim() || undefined,
@@ -152,6 +179,37 @@ export default function RunLogFormModal({ isOpen, onClose, editLog }: RunLogForm
             required
           />
         </div>
+
+        {allSections.length > 0 && (
+          <div>
+            <label className="label-text">经过的区段</label>
+            <div className="card p-2 max-h-40 overflow-y-auto space-y-1">
+              {allSections.map((section) => (
+                <label
+                  key={section.id}
+                  className="flex items-center gap-2 p-1.5 rounded hover:bg-rail-700/30 cursor-pointer text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.sectionIds.includes(section.id)}
+                    onChange={() => handleToggleSection(section.id)}
+                    className="rounded border-rail-600 bg-rail-800 text-copper-500 focus:ring-copper-500"
+                  />
+                  <span
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: section.color || '#d4a574' }}
+                  />
+                  <span className="text-rail-200 text-sm flex-1 truncate">
+                    {section.name}
+                  </span>
+                  <span className="text-rail-500 text-xs">
+                    {section.mapName}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="label-text">故障/问题点</label>
